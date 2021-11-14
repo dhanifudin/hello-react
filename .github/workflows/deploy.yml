@@ -1,27 +1,61 @@
-name: Example workflow for S3 Deploy
-on: [push]
+name: cicd-demo
+
+on:
+  push:
+    branches:
+      - '*'
 jobs:
-  run:
+  build:
+    name: Build Job
     runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
-      - uses: actions/checkout@v2
+      - name: 'Start build job'
+        run: |
+          echo "Starting the build job"
 
-      - name: Install dependencies
-        run: yarn
+      - name: 'Checkout'
+        uses: actions/checkout@v2
 
-      - name: Build
-        run: yarn build
-
-      - name: Deploy
-        uses: reggionick/s3-deploy@v3
+      - name: 'Setup nodejs'
+        uses: actions/setup-node@v2
         with:
-          folder: build
-          bucket: ${{ secrets.S3_BUCKET }}
-          bucket-region: ${{ secrets.S3_BUCKET_REGION }}
-          invalidation: /
-          delete-removed: true
-          no-cache: true
-          private: true
+          node-version: '16'
+
+      - run: yarn install
+      - run: yarn build
+
+      - name: 'Write config'
+        run: |
+          mkdir ~/.oci
+          echo "[DEFAULT]" >> ~/.oci/config
+          echo "user=${{secrets.OCI_USER_OCID}}" >> ~/.oci/config
+          echo "fingerprint=${{secrets.OCI_FINGERPRINT}}" >> ~/.oci/config
+          echo "region=${{secrets.OCI_REGION}}" >> ~/.oci/config
+          echo "tenancy=${{secrets.OCI_TENANCY_OCID}}" >> ~/.oci/config
+          echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
+          echo "${{secrets.OCI_KEY_FILE}}" >> ~/.oci/oci_api_key.pem
+          echo "${{secrets.OCI_KEY_PUBLIC}}" >> ~/.oci/oci_api_key_public.pem
+
+      - name: 'Install OCI CLI'
+        run: |
+          curl -L -O https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
+          chmod +x install.sh
+          ./install.sh --accept-all-defaults
+          echo "/home/runner/bin" >> $GITHUB_PATH
+          exec -l $SHELL
+
+      - name: 'Fix Config File Permissions'
+        run: |
+          oci setup repair-file-permissions --file /home/runner/.oci/config
+          oci setup repair-file-permissions --file /home/runner/.oci/oci_api_key.pem
+
+      - name: 'Deploy Into Object Storage'
+        run: |
+          oci os object bulk-delete -ns ${{secrets.OCI_BUCKET_NAMESPACE}}  -bn ${{secrets.OCI_BUCKET}}  --prefix static --force
+          oci os object put -bn ${{secrets.OCI_BUCKET}} --file ./build/manifest.json --content-type application/json --force
+          oci os object bulk-upload -bn ${{secrets.OCI_BUCKET}} --src-dir ./build --content-type text/html --include *.html --overwrite
+          oci os object bulk-upload -bn ${{secrets.OCI_BUCKET}} --src-dir ./build --content-type image/jpeg --include *.jpg --overwrite
+          oci os object bulk-upload -bn ${{secrets.OCI_BUCKET}} --src-dir ./build --content-type text/javascript --include *.js --overwrite
+          oci os object bulk-upload -bn ${{secrets.OCI_BUCKET}} --src-dir ./build --content-type application/pdf --include *.pdf --overwrite
+          oci os object bulk-upload -bn ${{secrets.OCI_BUCKET}} --src-dir ./build --content-type text/css --include *.css --overwrite
+          oci os object bulk-upload -bn ${{secrets.OCI_BUCKET}} --src-dir ./build --content-type text/plain --exclude *.js --exclude *.html --exclude *.jpg --exclude *.pdf --exclude *.css --exclude ./build/manifest.json --overwrite
