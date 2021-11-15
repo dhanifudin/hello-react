@@ -1,4 +1,4 @@
-name: cicd-demo
+name: Hosting Static Website
 
 on:
   push:
