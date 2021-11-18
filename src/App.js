@@ -5,7 +5,7 @@ function App() {
     <div className="App">
       <header className="App-header">
         <p>
-          Halo, Selamat siang saat ini kita sedang belajar CI/CD
+          Halo, Selamat siang saat ini kita sedang belajar CI/CD TI-3D
         </p>
         <a
           className="App-link"
